@@ -1,0 +1,15 @@
+#!/usr/bin/with-contenv sh
+
+_term() {
+  echo "Caught SIGTERM signal!"
+  wg-quick down $IFNAME
+}
+
+trap _term SIGTERM
+
+wg-quick up $IFNAME
+
+sleep infinity &
+
+wait
+

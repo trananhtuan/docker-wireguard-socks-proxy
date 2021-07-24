@@ -1,0 +1,4 @@
+#!/usr/bin/with-contenv sh
+
+sed -i "s/__IFNAME__/$IFNAME/" /etc/sockd.conf
+/usr/sbin/sockd

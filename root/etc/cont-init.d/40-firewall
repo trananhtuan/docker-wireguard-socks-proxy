@@ -1,0 +1,42 @@
+#!/usr/bin/with-contenv sh
+
+# wireguard endpoint could be a domain name, iptables will need a working dns
+# to resolve it to ip addresses
+echo "Checking internet connectivity"
+#until getent hosts $server 1>/dev/null 2>&1
+until ping -c1 1.1.1.1 1>/dev/null 2>&1
+do
+  echo "  Waiting for internet connectivity..."
+  sleep 30
+done
+
+echo "Setting up iptables and route"
+
+endpoint=$(grep 'Endpoint' "${CONF_FILE}" | awk -F= '{ gsub(/[ \t]+/, ""); print $2 }')
+server=$(echo $endpoint | awk -F: '{print $1}')
+port=$(echo $endpoint | awk -F: '{print $2}')
+nameservers=$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}')
+
+echo "Endpoint: $server:$port, DNS: $(echo $nameservers | tr '\n' ' ')"
+
+# setup firewall rules
+iptables -F
+
+iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -o wg0 -j ACCEPT
+iptables -A OUTPUT -o eth0 -p udp -d $server --dport $port -j ACCEPT
+echo "$nameservers" | while IFS= read -r dns; do
+  iptables -A OUTPUT -o eth0 -p udp -d $dns --dport 53 -j ACCEPT
+done
+
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -i eth0 -p udp -s ${LOCAL_NETWORK} --dport 1080 -j ACCEPT
+iptables -A INPUT -i eth0 -p tcp -s ${LOCAL_NETWORK} --dport 1080 -j ACCEPT
+
+iptables --policy INPUT DROP
+iptables --policy OUTPUT DROP
+iptables --policy FORWARD DROP
+
+# setup routing so return traffic that went through VPN works
+gw=$(ip route | awk '/default/ {print $3}')
+ip route add to ${LOCAL_NETWORK} via $gw dev eth0

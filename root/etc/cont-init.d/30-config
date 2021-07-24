@@ -1,0 +1,24 @@
+#!/usr/bin/with-contenv bash
+
+CONF_FILE=$(ls -1 /etc/wireguard/*.conf | head -1)
+
+if [[ "$CONF_FILE" == "" ]]; then
+    echo "No wireguard .conf files is found at /etc/wireguard/. Make sure you mount it correctly!" >&2
+    exit 1
+fi
+IFNAME=$(basename $CONF_FILE .conf)
+
+echo "Wireguard configuration file: $CONF_FILE"
+echo "Wireguard interface name: $IFNAME"
+
+printf "$CONF_FILE" > /var/run/s6/container_environment/CONF_FILE
+printf "$IFNAME" > /var/run/s6/container_environment/IFNAME
+
+# patch wg-quick script to remove the need for running in priviledge mode
+# as described here https://github.com/bobbypage/docker-wireguard/commit/5e16644902040ba2fc81c32f8a085c1678876130
+if [[ "$(cat /proc/sys/net/ipv4/conf/all/src_valid_mark)" != "1" ]]; then
+    echo "sysctl net.ipv4.conf.all.src_valid_mark=1 is not set" >&2
+    exit 1
+fi
+
+sed -i "s:sysctl -q net.ipv4.conf.all.src_valid_mark=1:echo skipping setting net.ipv4.conf.all.src_valid_mark:" /usr/bin/wg-quick
